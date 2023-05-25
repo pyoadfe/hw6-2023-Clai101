@@ -1,17 +1,13 @@
-from    collections import namedtuple
-import  matplotlib.pyplot as plt
-from    scipy import optimize
-import  numpy as np
-from    sklearn.model_selection import train_test_split
-import  pandas as pd
-from typing import Dict, List, Tuple, Union
+from __future__ import division
+from collections import namedtuple
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from scipy import optimize
 from collections import Counter
 
-def find_best_split(
-    feature_vector: np.ndarray,
-    target_vector: np.ndarray,
-    task: str = "classification"
-    ) -> Tuple[np.ndarray, np.ndarray, float, float]:
+def find_best_split(feature_vector, target_vector, task="classification"):
     def dispersion(y):
         return np.sum((y - np.mean(y)) ** 2)
 
@@ -49,26 +45,15 @@ def find_best_split(
 
     return thresholds, impurities, threshold_best, impurity_best
 
-class DecisionTree:
-    def __init__(
-        self,
-        max_depth: int = None,
-        min_samples_split: int = None,
-        min_samples_leaf: int = None,
-        task: str = "classification"
-    ) -> None:
+class DecisionTree(object):
+    def __init__(self, max_depth=None, min_samples_split=None, min_samples_leaf=None, task="classification"):
         self._tree = {}
         self._max_depth = max_depth
         self._min_samples_split = min_samples_split
         self._min_samples_leaf = min_samples_leaf
         self.task = task
 
-    def _fit_node(
-        self,
-        sub_X: np.ndarray,
-        sub_y: np.ndarray,
-        node: dict
-    ) -> None:
+    def _fit_node(self, sub_X, sub_y, node):
         if np.all(sub_y == sub_y[0]):
             node["type"] = "terminal"
             node["class"] = sub_y[0]
@@ -98,7 +83,7 @@ class DecisionTree:
         self._fit_node(sub_X[split], sub_y[split], node["left_child"])
         self._fit_node(sub_X[~split], sub_y[~split], node["right_child"])
 
-    def _predict_node(self, x: np.ndarray, node: dict) -> int:
+    def _predict_node(self, x, node):
         if node["type"] == "terminal":
             return node["class"]
         if x[int(node["feature_split"])] <= float(node["threshold"]):
@@ -106,42 +91,52 @@ class DecisionTree:
         else:
             return self._predict_node(x, node["right_child"])
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+    def fit(self, X, y):
         self._fit_node(X, y, self._tree)
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X):
         predicted = []
         for x in X:
             predicted.append(self._predict_node(x, self._tree))
         return np.array(predicted)
 
-data = pd.read_csv("sdss_redshift.csv")
-x = data[['u', 'g', 'r', 'i', 'z']]
-y = data['redshift']
-X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.1, random_state=np.random.randint(0, np.random.randint(50, 1000)))
+data = np.genfromtxt("sdss_redshift.csv", delimiter=',', skip_header=1)
+x = data[:, 0:5]
+y = data[:, 5]
 
-X_train.reset_index(drop=True, inplace=True)
-y_train.reset_index(drop=True, inplace=True)
+# Split the data into train and test sets
+np.random.seed(np.random.randint(0, np.random.randint(50, 1000)))
+indices = np.random.permutation(len(x))
+train_size = int(0.9 * len(x))
+train_indices = indices[:train_size]
+test_indices = indices[train_size:]
+X_train, X_test = x[train_indices], x[test_indices]
+y_train, y_test = y[train_indices], y[test_indices]
 
 k = 1
-print(x.shape)
+print x.shape
 forest = []
 while k < 3:
     k1 = 0
-    print(y_train)
+    print y_train
     garden = []
-    while k1 < 10**(1/k):
-        X_train_split, _, y_train_split, _ = train_test_split(X_train, y_train, test_size=0.5, random_state=np.random.randint(0, 20))
+    while k1 < int(10**(1/k)):
+        np.random.seed(np.random.randint(0, 20))
+        train_indices = np.random.permutation(len(X_train))
+        train_size = int(0.5 * len(X_train))
+        train_split_indices = train_indices[:train_size]
+        X_train_split, y_train_split = X_train[train_split_indices], y_train[train_split_indices]
         tree = DecisionTree(max_depth=None, min_samples_split=None, min_samples_leaf=None, task="classification")
-        tree.fit(X_train_split.to_numpy(), y_train_split.to_numpy())
-        print("Acc =", np.mean(np.abs(y_train - tree.predict(X_train.to_numpy()))) / np.mean(np.abs(y_train)))
+        tree.fit(X_train_split, y_train_split)
+        print "Acc =", np.mean(np.abs(y_train - tree.predict(X_train))) / np.mean(np.abs(y_train))
         k1 += 1
         garden.append(tree)
-    y_train = y_train - np.mean([tree.predict(X_train.to_numpy()) for tree in garden], axis=0)
+    y_train = y_train - np.mean([tree.predict(X_train) for tree in garden], axis=0)
     forest.append(garden)
     k += 1
 
-y_pred = np.sum([np.mean([tree.predict(X_test.to_numpy()) for tree in garden], axis=0) for garden in forest], axis=0)
+
+y_pred = np.sum([np.mean([tree.predict(X_test.values) for tree in garden], axis=0) for garden in forest], axis=0)
 
 plt.title("Prediction")
 plt.plot(y_test, y_pred, '.', label='Data', alpha=0.3)
